@@ -8,5 +8,6 @@ dependencies = [
     "mrcfile",
     "starfile",
     "pandas",
-    "spherical"
+    "spherical",
+    "torch"
 ]

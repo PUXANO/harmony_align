@@ -3,16 +3,23 @@ from pathlib import Path
 from time import time
 
 import numpy as np
+import torch
 
 from tools.xmipp import AtomLine
 from tools.spider_files3 import open_volume
-from align.volume_heat_kernel import Registrator
 
 DATA = Path(__file__).parents[1] / "data"
 
 coordinates = np.stack([atom.coordinates for atom in AtomLine.from_pdb(DATA / "3uat_psi=135_tilt=45_rot=120.pdb")])
 voxels = open_volume(DATA / "3uat.vol")
 
+if torch.cuda.is_available():
+    from align.volume_heat_kernel_torch import Registrator
+    from tools.utils_torch import from_numpy
+    coordinates = from_numpy(coordinates)
+    voxels = from_numpy(voxels)
+else:
+    from align.volume_heat_kernel import Registrator
 
 print("Preprocessing...")
 t0 = time()
