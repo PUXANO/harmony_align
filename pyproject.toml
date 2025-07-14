@@ -1,0 +1,12 @@
+[project]
+name = "harmonyalign"
+version = "0.1.0"
+description = ""
+dependencies = [
+    "numpy",
+    "scipy",
+    "mrcfile",
+    "starfile",
+    "pandas",
+    "spherical"
+]
