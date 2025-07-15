@@ -110,12 +110,12 @@ class Registrator(Spatial):
         if self.voxels is None:
             raise ValueError("No voxels set for filtering")
         idx = np.array([(l,m,i_k) for l,m in self.lm() for i_k, k in enumerate(self.k_profile[l])])
-        moments = np.concatenate([s.flatten() for s in self.sl])
+        moments = np.concatenate([np.abs(s.flatten()) for s in self.sl])
         permutation = np.argsort(moments)[::-1]
         idx = idx[permutation]
         moments = moments[permutation]
         if isinstance(thresh, float):
-            mask = moments ** 2 < thresh * (moments @ moments)
+            mask = np.cumsum(moments ** 2) < thresh * (moments @ moments)
             thresh = np.sum(mask)
         return idx[:thresh]
     

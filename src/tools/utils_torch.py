@@ -35,7 +35,7 @@ def torch_Ylm(l: int, m: int, theta: Tensor, phi: Tensor) -> Tensor:
     
     NOTE Associated Legendre polynomials are computed using scipy's sph_harm_y, thus on CPU.
     '''
-    Yl0 = from_numpy(np.real(sph_harm_y(l,m,theta.cpu().numpy(), 0.0))) 
+    Yl0 = from_numpy(np.real(sph_harm_y(l,abs(m),theta.cpu().numpy(), 0.0))) 
     match m:
         case 0:
             return Yl0
