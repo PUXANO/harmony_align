@@ -21,18 +21,18 @@ def euler_to_tensor(euler: tuple | Tensor) -> Tensor:
     '''Convert Euler angles in ZYZ convention to a rotation matrix tensor.'''
     return from_numpy(Rotation.from_euler('ZYZ', euler, degrees=True).as_matrix())
 
-class Spatial(SphericalSequence, IGrid):
+class Spatial(SphericalSequence, Grid):
     def __init__(self, grid_size = 100, scale = 1.0, l_max: int = 10):
         SphericalSequence.__init__(l_max)
         bound = (grid_size - 1) / 2 * scale
         ticks = torch.linspace(-bound,bound,grid_size, device = DEVICE)
-        IGrid.__init__(self,*torch.meshgrid(ticks,ticks,ticks, indexing='ij'), l_max=l_max)
+        Grid.__init__(self,*torch.meshgrid(ticks,ticks,ticks, indexing='ij'))
         self.k = [2 * torch.pi / grid_size * ticks] * (l_max + 1)
 
     def Slm(self,voxels: Tensor, k_profile: Tensor) -> Generator[Tensor,None,None]:
         '''Eigenfunctions for the volume'''
         for l,m in self.lm():
-            yield torch.sum(self.fourier_bessel_expansion_interp(l,m,self,k_profile[l]) * voxels[...,None] * self.dV,dim=(0,1,2))
+            yield torch.sum(self.fourier_bessel_expansion(l,m,k_profile[l]) * voxels[...,None] * self.dV,dim=(0,1,2))
 
     def Sl(self,voxels: Tensor, k_profile: Tensor) -> Generator[Tensor,None,None]:
         multiplet = []
@@ -54,7 +54,7 @@ class Spatial(SphericalSequence, IGrid):
         for l,m in self.lm():
             # TODO precompute k-density
             density = torch.exp(- self.k[l] **2 * sigma**2 / 2) if k_density is None else k_density[l]
-            yield torch.sum(self.fourier_bessel_expansion_interp(l,m,coordinates_as_grid,k_profile[l]) * density,dim=0) #should be 1D
+            yield torch.sum(coordinates_as_grid.fourier_bessel_expansion(l,m,k_profile[l]) * density,dim=0) #should be 1D
 
     def Vl(self, coordinates: Tensor, sigma: float, k_profile: Tensor, k_density: Tensor = None) -> Generator[Tensor,None,None]:
         multiplet = []
