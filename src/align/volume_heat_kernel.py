@@ -16,7 +16,7 @@ from tools.sequences import SphericalSequence
 
 class Spatial(SphericalSequence, Grid):
     def __init__(self, grid_size = 100, scale = 1.0, l_max: int = 10):
-        SphericalSequence.__init__(l_max)
+        SphericalSequence.__init__(self, l_max)
         bound = (grid_size - 1) / 2 * scale
         ticks = np.linspace(-bound,bound,grid_size)
         Grid.__init__(self,*np.meshgrid(ticks,ticks,ticks, indexing='ij'))
@@ -72,9 +72,10 @@ class Registrator(Spatial):
                  scale = 1.0, 
                  l_max: int = 10,
                  n_spherical: int = 36,
-                 n_inplane: int = 36):
+                 n_inplane: int = 36,
+                 k_res : int = 1):
         super().__init__(grid_size, scale, l_max)
-        self.k_profile = [2 * np.pi / grid_size * np.linspace(0, grid_size // 2, grid_size // 2 + 1)] * (l_max + 1)
+        self.k_profile = [2 * np.pi / grid_size * np.linspace(0, grid_size // 2, k_res * (grid_size // 2) + 1)] * (l_max + 1)
         self.k_density = [np.exp(-self.k[l] **2 / 2) for l in range(l_max + 1)]
         self.voxels = voxels
         self.sl = list(self.Slm(voxels, self.k_profile)) if self.voxels is not None else []
