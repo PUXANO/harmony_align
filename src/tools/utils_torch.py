@@ -109,7 +109,7 @@ class Grid:
 
     @classmethod
     def regular(cls, start = -50, stop = 49, num = 100) -> Self:
-        ticks = torch.linspace(start,stop,num)
+        ticks = torch.linspace(start,stop,num, device=DEVICE)
         return cls(*torch.meshgrid(ticks,ticks,ticks,indexing='ij'))
     
     def __post_init__(self):

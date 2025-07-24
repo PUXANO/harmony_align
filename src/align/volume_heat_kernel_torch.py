@@ -23,7 +23,7 @@ def euler_to_tensor(euler: tuple | Tensor) -> Tensor:
 
 class Spatial(SphericalSequence, Grid):
     def __init__(self, grid_size = 100, scale = 1.0, l_max: int = 10):
-        SphericalSequence.__init__(l_max)
+        SphericalSequence.__init__(self, l_max)
         bound = (grid_size - 1) / 2 * scale
         ticks = torch.linspace(-bound,bound,grid_size, device = DEVICE)
         Grid.__init__(self,*torch.meshgrid(ticks,ticks,ticks, indexing='ij'))
@@ -79,12 +79,13 @@ class Registrator(Spatial):
                  scale = 1.0, 
                  l_max: int = 10,
                  n_spherical: int = 36,
-                 n_inplane: int = 36):
+                 n_inplane: int = 36,
+                 k_res: int = 1):
         super().__init__(grid_size, scale, l_max)
-        self.k_profile = [2 * torch.pi / grid_size * torch.linspace(0, grid_size // 2, grid_size // 2 + 1, device=DEVICE)] * (l_max + 1)
+        self.k_profile = [2 * torch.pi / grid_size * torch.linspace(0, grid_size // 2, (grid_size//2)*k_res + 1, device=DEVICE)] * (l_max + 1)
         self.k_density = [torch.exp(-self.k[l] **2 / 2).to(DEVICE) for l in range(l_max + 1)]
         self.voxels = voxels
-        self.sl = list(self.Slm(voxels, self.k_profile)) if self.voxels is not None else []
+        self.sl = None
         self.gallery = WignerGalleryTorch(n_spherical, n_inplane,l_max)
         self.preprocessed = None
 
@@ -140,7 +141,7 @@ class Registrator(Spatial):
             sl[l].append(self.sl[l][:,i_k])
         self.k_profile = [as_tensor(k_l) for k_l in k_profile]
         self.k_density = [as_tensor(d_l) for d_l in k_density]
-        self.sl = [torch.stack(ms_per_k,dim=-1) for ms_per_k in sl]
+        self.sl = [torch.stack(ms_per_k,dim=-1) if ms_per_k else torch.empty(1,1,device = DEVICE) for ms_per_k in sl]
         return self
     
     def preprocess(self) -> Self:
@@ -173,7 +174,7 @@ class Registrator(Spatial):
         best_fit = torch.argmax(torch.abs(self._latest_correlations),dim=0)
         return self.gallery[best_fit]
     
-    def correlation_frame(self, labels=['0,45,0']) -> pd.DataFrame:
+    def correlation_frame(self, labels=['correlation']) -> pd.DataFrame:
         '''
         Postprocess the registration results, yielding rotations for each coordinate set
         '''

@@ -21,20 +21,18 @@ class ZernikeSequence:
                     yield l,n
 
 class SphericalSequence:
-    l_max = 3
+    def __init__(self, l_max: int = 3, allow_isotropic: bool = True):
+        self.l_max = l_max
+        self.allow_isotropic = allow_isotropic
+
+    def start_l(self) -> int:
+        return 0 if self.allow_isotropic else 1
 
     def lm(self) -> Generator[tuple[int,int],None,None]:
-        for l in range(self.l_max+1):
+        for l in range(self.start_l(), self.l_max+1):
             for m in range(-l,l+1):
                 yield l,m
 
-    @classmethod
-    def collect(cls, gen: Generator, collector = np.stack):
-        l = 0
-        multiplet = []
-        for value in gen:
-            multiplet.append(value)
-            if len(multiplet) == 2 * l + 1:
-                yield collector(multiplet)
-                l += 1
-                multiplet = []
+    def l(self) -> Generator[int,None,None]:
+        for l in range(self.start_l(), self.l_max+1):
+            yield l
