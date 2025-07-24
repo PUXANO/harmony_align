@@ -10,6 +10,22 @@ The main requirements for this module are:
 
 These come from the need to integrate it in Boltz diffusion pipeline, where coordinates can come in any orientation and are reproduced many times (default 200) for the same densities against which we want to validate.
 
+## Timings
+
+To illustrate the potential of this approach we benchmarked some runtimes on Karolina:
+
+| preprocess time | alignment time | n_angles | n_moments | l_max |
+|-----------------|----------------|----------|-----------|-------|
+| 24s | 30ms | 120 | 57 | 3 |
+| 24s | 30ms | 5856 | 57 | 3 |
+| 451s | 550ms | 5856 | 964 | 10 |
+
+Where the discretization of SO(3) and the density is given by n_angles and n_moments respectively, the latter determined by a maximal angular momentum l_max considered.
+
+It is clear that the main scaling is in the preprocessing, as intended. Since it is mostly conducted on CPU, optimization and parallelization might improve this further.
+
+The results in terms of properly approximating the structure and finding the correct angle are not very accurate. The timings however hint at this being a viable aproach to merge workflows with an unknown relative rotation.
+
 ## Correlation approximation
 
 A typical way to compare 2 densities is to take the correlation between its pixels. A proven benefical approach is to reduce the densities pixel content to orthogonal components carrying the bulk of the information, reducing the computational cost. This has been done in Xmipp both by PCA and other decompositions. Representing the reference density for a large number of candidate rotations by such a reduced vector could allow fast comparison to a new set of coordinates, if we can convert them efficiently to the same basis.
