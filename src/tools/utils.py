@@ -140,7 +140,7 @@ class Grid:
         Assuming k is a 1D array of frequencies, 
         the resulting shape is a cartesion product of Grid and k
         '''
-        ball = self.r[...,None] < self.grid.abs().max()
+        ball = self.r[...,None] < np.abs(self.grid).max()
         return spherical_jn(l, self.r[...,None] * k) * self.Ylm(l,m)[...,None] * k * np.sqrt(2 / np.pi) * ball
     
     def Xnlm(self, n, l, m) -> np.ndarray:
