@@ -6,6 +6,21 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.special import sph_harm_y, spherical_jn, eval_jacobi
+from scipy.optimize import brentq
+
+
+def jn_zeros(n_max: int, n_roots: int):
+    '''
+    Compute the zeros of the spherical Bessel functions of the first kind.
+
+    https://scipy-cookbook.readthedocs.io/items/SphericalBesselZeros.html
+    '''
+    jn = lambda r, i: spherical_jn(i, r)
+    points = np.arange(1,n_roots+n_max+1) * np.pi
+    roots = [points]
+    for i in range(1,n_max+1):
+        roots.append(points := [brentq(jn, points[j], points[j+1], (i,)) for j in range(n_roots+n_max-i)])
+    return np.array([row[:n_roots] for row in roots])
 
 def computeRadial(n: int, l: int, r: np.ndarray) -> np.ndarray:
     '''
@@ -125,7 +140,8 @@ class Grid:
         Assuming k is a 1D array of frequencies, 
         the resulting shape is a cartesion product of Grid and k
         '''
-        return spherical_jn(l, self.r[...,None] * k) * self.Ylm(l,m)[...,None] * k * np.sqrt(2 / np.pi)
+        ball = self.r[...,None] < self.grid.abs().max()
+        return spherical_jn(l, self.r[...,None] * k) * self.Ylm(l,m)[...,None] * k * np.sqrt(2 / np.pi) * ball
     
     def Xnlm(self, n, l, m) -> np.ndarray:
         factory = lambda: spherical_jn(2*n+l+1,self.r) / self.r_reg * self.Ylm(l,m) * np.sqrt(4 * (2 * n + l + 1) / np.pi)

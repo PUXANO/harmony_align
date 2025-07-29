@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 import pandas as pd
 
 from tools.wigner import WignerGallery
-from tools.utils import Grid
+from tools.utils import Grid, jn_zeros
 from tools.sequences import SphericalSequence
 
 class Spatial(SphericalSequence, Grid):
@@ -75,7 +75,7 @@ class Registrator(Spatial):
                  n_inplane: int = 36,
                  k_res : int = 1):
         super().__init__(grid_size, scale, l_max)
-        self.k_profile = [2 * np.pi / grid_size * np.linspace(0, grid_size // 2, k_res * (grid_size // 2) + 1)] * (l_max + 1)
+        self.k_profile = self.get_k_profile(grid_size, l_max, k_res)
         self.k_density = [np.exp(-self.k[l] **2 / 2) for l in range(l_max + 1)]
         self.voxels = voxels
         self.sl = list(self.Slm(voxels, self.k_profile)) if self.voxels is not None else []
@@ -83,6 +83,18 @@ class Registrator(Spatial):
         self.preprocessed = None
 
         self._latest_correlations = None # temporary storage for the latest correlations
+
+    @classmethod
+    def get_k_profile(cls, grid_size: int, l_max: int, k_res: int) -> list[np.ndarray]:
+        '''
+        Get the k-profile for the spherical harmonics. 
+        
+        Pick k's that set the spherical Bessel functions to zero at the spherical grid boundary.
+
+        Returns k_res * (grid_size // 2) k-values per l.
+        '''
+        r_max = (grid_size // 2)
+        return list(jn_zeros(l_max, k_res * (grid_size // 2)) / r_max)
 
     def set_reference(self, reference_coordinates: np.ndarray = None, reference_rotation: np.ndarray | tuple = np.eye(3), voxels: np.ndarray = None) -> Self:
         '''
