@@ -167,22 +167,22 @@ class Registrator(Spatial):
 
         return self
     
-    def Sl_m(self, l:int, k_profile_l: np.ndarray) -> list[np.ndarray]:
-       return np.stack([np.sum(self.fourier_bessel_expansion(l,m,k_profile_l) * self.voxels[...,None] * self.dV,axis=(0,1,2)) 
-                        for m in range(-l, l + 1)], axis=0)
+    def Slm_single(self, l:int, m:int, k_profile_l: np.ndarray) -> list[np.ndarray]:
+       return np.sum(self.fourier_bessel_expansion(l,m,k_profile_l) * self.voxels[...,None] * self.dV,axis=(0,1,2))                
 
     def Sl_parallel(self, k_profile: np.ndarray) -> list[np.ndarray]:
         '''
         Compute the spherical harmonics for the given voxels in parallel.
         Returns a list of multiplets, one for each l.
         '''
-        res = [None] * (self.l_max + 1)
+        res = [[None]*(2*l+1) for l in range(self.l_max + 1)]
+
         with ProcessPoolExecutor() as executor:
-            futures = {executor.submit(Registrator.Sl_m,self, l, k_prof): l for l, k_prof in enumerate(k_profile)}
+            futures = {executor.submit(Registrator.Slm_single,self, l, m, k_prof): (l,m) for l, k_prof in enumerate(k_profile) for m in range(-l, l + 1)}
             for future in as_completed(futures):
-                l = futures[future]
-                res[l] = future.result()
-        return res
+                l, m = futures[future]
+                res[l][m+l] = future.result()
+        return [np.stack(multiplet,axis=0) for multiplet in res]
 
     def correlations(self, coordinates: np.ndarray, sigma: float = 1.0) -> np.ndarray:
         '''
