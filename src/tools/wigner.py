@@ -3,23 +3,7 @@ from typing import Generator
 import numpy as np
 from spherical.wigner import Wigner
 from quaternionic.arrays import array
-
-def to_realspace_Y(l: int) -> np.ndarray:
-    '''
-    Return a (2l+1) x (2l+1) matrix such that
-
-    Y^real_{lm} = U_{mm'}Y_{lm'}
-
-    for Y_{lm} ~ exp(im\phi) the usual spherical harmonics 
-    and Y^real_{lm} ~ cos(m\phi) if m>=0 else sin(m\phi).
-
-    cfr. https://en.wikipedia.org/wiki/Spherical_harmonics#Real_form
-    '''
-    A = np.eye(2*l + 1)
-    B = np.fliplr(A)
-    b = np.diag([-1.j*(-1)**m/np.sqrt(2) for m in range(-l,0)] + [0] + [1/np.sqrt(2)]*l)
-    a = np.diag([1.j/np.sqrt(2)]*l + [1.0] + [(-1)**m/np.sqrt(2) for m in range(1,l+1)])
-    return a @ A + b @ B
+from tools.utils import RealSph
 
 class WignerGallery:
     '''
@@ -54,9 +38,8 @@ class WignerGallery:
         entries = wigner.D(gallery)
         i = 0
         for l in range(l_max+1):
-            Urs = to_realspace_Y(l) # convert Ylm to real space convention
             f = i + (2*l+1)**2
-            M = Urs @ entries[:,i:f].reshape((-1,2*l+1,2*l+1)) @ np.conjugate(Urs.T)
+            M = RealSph.U(l) @ entries[:,i:f].reshape((-1,2*l+1,2*l+1)) @ np.conjugate(RealSph.U(l).T)
             assert np.allclose(np.imag(M),0), "Wigner D's in real space convention should be real"
             yield np.real(M)
             i = f
@@ -83,3 +66,35 @@ class WignerGalleryTorch(WignerGallery):
         self.grid = array.from_euler_angles(np.array(list(self.gallery(n_spherical, n_inplane))))
         from tools.utils_torch import from_numpy
         self.matrices = [from_numpy(matrix) for matrix in self.get_matrices(self.grid, l_max)]
+
+if __name__ == "__main__":
+
+    def rotate_angles(theta, phi, rot):
+        '''rotate angles theta, phi by rotation rot'''
+        new_rot = rot.to_rotation_matrix.squeeze()
+        vec = np.array([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)])
+        new_vec = new_rot @ vec
+        new_theta = np.arccos(new_vec[2])
+        new_phi = np.arctan2(new_vec[1], new_vec[0])
+        return new_theta, new_phi
+
+    # pick some angles
+    phi = 0.8 * np.pi
+    theta = 0.3 * np.pi
+    rot = array.from_euler_angles(np.array([[np.pi/2.13, np.pi/1.23,np.pi/3.21]]) )
+
+    mplets = [np.array([RealSph.Ylm(l,m,theta,phi) for m in range(-l,l+1)]) for l in range(4)]
+
+    # Rotate moments in 2 ways: through coordinates and wigner D matrices
+    theta2,phi2 = rotate_angles(theta, phi, rot)
+    matrices = WignerGallery.get_matrices(None,rot, 3)
+
+    mplets_rotated_coord = [np.array([RealSph.Ylm(l,m,theta2, phi2) for m in range(-l,l+1)]) for l in range(4)]
+    mplets_rotated_moments = [mat[0] @ mplet for mat, mplet in zip(matrices, mplets)]
+
+    # Check if they match
+    for l, (mplet_rot, mplet_wigner) in enumerate(zip(mplets_rotated_coord, mplets_rotated_moments)):
+        if np.allclose(mplet_rot, mplet_wigner):
+            print(f"Matching spherical moments for l={l}")
+        else:
+            print(np.stack((mplet_rot, mplet_wigner)))
