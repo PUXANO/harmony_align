@@ -6,6 +6,21 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from scipy.special import sph_harm_y, spherical_jn, eval_jacobi
+from scipy.optimize import brentq
+
+
+def jn_zeros(n_max: int, n_roots: int):
+    '''
+    Compute the zeros of the spherical Bessel functions of the first kind.
+
+    https://scipy-cookbook.readthedocs.io/items/SphericalBesselZeros.html
+    '''
+    jn = lambda r, i: spherical_jn(i, r)
+    points = np.arange(1,n_roots+n_max+1) * np.pi
+    roots = [points]
+    for i in range(1,n_max+1):
+        roots.append(points := [brentq(jn, points[j], points[j+1], (i,)) for j in range(n_roots+n_max-i)])
+    return np.array([row[:n_roots] for row in roots])
 
 def computeRadial(n: int, l: int, r: np.ndarray) -> np.ndarray:
     '''
@@ -19,14 +34,50 @@ def computeRadial(n: int, l: int, r: np.ndarray) -> np.ndarray:
     q = l + 3/2
     return np.sqrt(2*n + 3) * r**l * eval_jacobi(a,0,q-1,2 * r **2 - 1)
 
-def computeYlm(l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
-    match m:
-        case 0:
-            return np.real(sph_harm_y(l,m,theta, 0.0))
-        case _ if m > 0:
-            return np.sqrt(2) * np.real(sph_harm_y(l,m,theta, 0.0)) * np.cos(m * phi)
-        case _ if m < 0:
-            return np.sqrt(2) * np.real(sph_harm_y(l,-m,theta, 0.0)) * np.sin(-m * phi)
+from scipy.sparse import coo_array
+import numpy as np
+from scipy.special import sph_harm_y
+
+class RealSph:
+    # conversion coefficients for real spherical harmonics
+    cos_minus = lambda m: (-1) ** m / np.sqrt(2)
+    cos_plus = lambda m: 1 / np.sqrt(2)
+    sin_minus = lambda m: 1j / np.sqrt(2) * (-1) ** m
+    sin_plus = lambda m: -1j / np.sqrt(2)
+
+    Us = {}
+    '''Cache for the conversion matrices U_{mm'}.'''
+
+    @classmethod
+    def _to_realspace(cls,l: int) -> np.ndarray:
+        '''Internal computation of the conversion matrix U_{mm'} for a given l.'''
+        vals = {(0,0): 1.0}
+        for m in range(1, l + 1):
+            vals[(m, m)] = cls.cos_plus(m)
+            vals[(m, -m)] = cls.cos_minus(m)
+            vals[(-m, m)] = cls.sin_plus(m)
+            vals[(-m, -m)] = cls.sin_minus(m)
+        iis,jjs = zip(*[(i+l,j+l) for i,j in vals.keys()])
+        return coo_array((list(vals.values()),(iis,jjs)), shape=(2*l+1,2*l+1)).toarray()
+    
+    @classmethod
+    def U(cls, l: int) -> np.ndarray:
+        '''Get the conversion matrix mapping complex spherical harmonics to real spherical harmonics for a given l.'''
+        if l not in cls.Us:
+            cls.Us[l] = cls._to_realspace(l)
+        return cls.Us[l]
+    
+    @classmethod
+    def Ylm(cls, l: int, m: int, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
+        '''Compute real spherical harmonics Y^real_{lm} at angles theta and phi.'''
+        match m:
+            case 0:
+                return np.real(sph_harm_y(l, m, theta, phi))
+            case _ if m > 0:
+                return 2 * cls.cos_plus(m) * np.real(sph_harm_y(l, m, theta, 0.0)) * np.cos(m * phi)
+            case _ if m < 0:
+                return np.real(2j * cls.sin_plus(m) * sph_harm_y(l, -m, theta, 0.0)) * np.sin(-m * phi)
+        return np.zeros_like(theta)
 
 def computeZernikes3D(l1, n, l2, m, pos, r_max = 1.0):
 
@@ -41,7 +92,7 @@ def computeZernikes3D(l1, n, l2, m, pos, r_max = 1.0):
     theta = np.where(r > 0, np.arccos(z / r_reg), 0.0)
 
     R = computeRadial(l1,n,r)
-    Y = computeYlm(l2,m,theta, phi)
+    Y = RealSph.Ylm(l2,m,theta, phi)
 
     return np.where(r <= 1.0, R * Y, 0.0)
 
@@ -59,7 +110,7 @@ def computeZernikesFT(n,l,m, pos, drop_phase: bool = False):
     theta = np.arccos(z / r_reg)
     N2 = np.pi / 4 / (2*n + l + 1) # == Int |Ylm j_{2n+l+1}/r|^2
     # TODO check phase/sign
-    real = computeYlm(l,m,theta, phi) * spherical_jn(2*n + l + 1, r) / r_reg  / np.sqrt(N2)  
+    real = RealSph.Ylm(l,m,theta, phi) * spherical_jn(2*n + l + 1, r) / r_reg  / np.sqrt(N2)  
     return real if drop_phase else real * (-1)**n * 1.j**l
 
 @dataclass
@@ -101,7 +152,7 @@ class Grid:
         return np.maximum(self.r,1.e-8)
     
     def Ylm(self,l,m) -> np.ndarray:
-        res = self.cached_Ylm.get((l,m),computeYlm(l,m,self.theta,self.phi))
+        res = self.cached_Ylm.get((l,m),RealSph.Ylm(l,m,self.theta,self.phi))
         if (l,m) not in self.cached_Ylm:
             self.cached_Ylm[(l,m)] = res
         return res
@@ -125,7 +176,8 @@ class Grid:
         Assuming k is a 1D array of frequencies, 
         the resulting shape is a cartesion product of Grid and k
         '''
-        return spherical_jn(l, self.r[...,None] * k) * self.Ylm(l,m)[...,None] * k * np.sqrt(2 / np.pi)
+        ball = self.r[...,None] < np.abs(self.grid).max()
+        return spherical_jn(l, self.r[...,None] * k) * self.Ylm(l,m)[...,None] * k * np.sqrt(2 / np.pi) * ball
     
     def Xnlm(self, n, l, m) -> np.ndarray:
         factory = lambda: spherical_jn(2*n+l+1,self.r) / self.r_reg * self.Ylm(l,m) * np.sqrt(4 * (2 * n + l + 1) / np.pi)

@@ -5,13 +5,14 @@
 
 from typing import Generator, Self
 from time import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 import pandas as pd
 
 from tools.wigner import WignerGallery
-from tools.utils import Grid
+from tools.utils import Grid, jn_zeros
 from tools.sequences import SphericalSequence
 
 class Spatial(SphericalSequence, Grid):
@@ -20,7 +21,6 @@ class Spatial(SphericalSequence, Grid):
         bound = (grid_size - 1) / 2 * scale
         ticks = np.linspace(-bound,bound,grid_size)
         Grid.__init__(self,*np.meshgrid(ticks,ticks,ticks, indexing='ij'))
-        self.k = [2 * np.pi / grid_size * ticks] * (l_max + 1)
 
     def Slm(self,voxels: np.ndarray, k_profile: np.ndarray) -> Generator[np.ndarray,None,None]:
         '''Eigenfunctions for the volume'''
@@ -75,14 +75,31 @@ class Registrator(Spatial):
                  n_inplane: int = 36,
                  k_res : int = 1):
         super().__init__(grid_size, scale, l_max)
-        self.k_profile = [2 * np.pi / grid_size * np.linspace(0, grid_size // 2, k_res * (grid_size // 2) + 1)] * (l_max + 1)
-        self.k_density = [np.exp(-self.k[l] **2 / 2) for l in range(l_max + 1)]
+        self.k_profile = self.get_k_profile(grid_size, l_max, k_res)
+        self.k_density = [np.exp(-self.k_profile[l] **2 / 2) for l in range(l_max + 1)]
         self.voxels = voxels
         self.sl = list(self.Slm(voxels, self.k_profile)) if self.voxels is not None else []
-        self.gallery = WignerGallery(n_spherical, n_inplane,l_max)
+        self._gallery = (n_spherical, n_inplane,l_max)
         self.preprocessed = None
 
         self._latest_correlations = None # temporary storage for the latest correlations
+
+    @property
+    def gallery(self) -> WignerGallery:
+        '''create on the fly since QArrays are not serializable for parallelization '''
+        return WignerGallery(*self._gallery)
+
+    @classmethod
+    def get_k_profile(cls, grid_size: int, l_max: int, k_res: int) -> list[np.ndarray]:
+        '''
+        Get the k-profile for the spherical harmonics. 
+        
+        Pick k's that set the spherical Bessel functions to zero at the spherical grid boundary.
+
+        Returns k_res * (grid_size // 2) k-values per l.
+        '''
+        r_max = (grid_size // 2)
+        return list(jn_zeros(l_max, k_res * (grid_size // 2)) / r_max)
 
     def set_reference(self, reference_coordinates: np.ndarray = None, reference_rotation: np.ndarray | tuple = np.eye(3), voxels: np.ndarray = None) -> Self:
         '''
@@ -102,7 +119,7 @@ class Registrator(Spatial):
             return self
         finally:
             if self.voxels is not None:
-                self.sl = list(self.Sl(self.voxels, self.k_profile))
+                self.sl = self.Sl_parallel(self.k_profile)
     
     def relevant_k(self, thresh: float | int) -> list[tuple[int,int, int]]:
         '''
@@ -134,7 +151,9 @@ class Registrator(Spatial):
             sl[l].append(self.sl[l][:,i_k])
         self.k_profile = k_profile
         self.k_density = k_density
-        self.sl = [np.stack(ms_per_k,axis=-1) for ms_per_k in sl]
+        self.sl = [np.stack(ms_per_k,axis=-1) 
+                   if ms_per_k else np.zeros((2*l+1,len(self.k_profile[l]))) 
+                   for l,ms_per_k in enumerate(sl)]
         return self
     
     def preprocess(self) -> Self:
@@ -143,9 +162,26 @@ class Registrator(Spatial):
         '''
         self.preprocessed = [np.einsum('gmw,wk->gmk',
                                        gallery,
-                                       sl) for gallery,sl in zip(self.gallery.matrices,self.Sl(self.voxels, self.k_profile))]
+                                       sl) for gallery,sl in zip(self.gallery.matrices,self.sl)]
 
         return self
+    
+    def Slm_single(self, l:int, m:int, k_profile_l: np.ndarray) -> list[np.ndarray]:
+        return np.sum(self.fourier_bessel_expansion(l,m,k_profile_l) * self.voxels[...,None] * self.dV,axis=(0,1,2))                
+
+    def Sl_parallel(self, k_profile: np.ndarray) -> list[np.ndarray]:
+        '''
+        Compute the spherical harmonics for the given voxels in parallel.
+        Returns a list of multiplets, one for each l.
+        '''
+        res = [[None]*(2*l+1) for l in range(self.l_max + 1)]
+
+        with ProcessPoolExecutor() as executor:
+            futures = {executor.submit(Registrator.Slm_single,self, l, m, k_prof): (l,m) for l, k_prof in enumerate(k_profile) for m in range(-l, l + 1)}
+            for future in as_completed(futures):
+                l, m = futures[future]
+                res[l][m+l] = future.result()
+        return [np.stack(multiplet,axis=0) for multiplet in res]
 
     def correlations(self, coordinates: np.ndarray, sigma: float = 1.0) -> np.ndarray:
         '''
@@ -155,7 +191,7 @@ class Registrator(Spatial):
         '''
         if self.preprocessed is None:
             raise ValueError("Preprocessing not done, call preprocess() first")
-        correlation = np.sum([np.einsum('mk,gmk->g',Vlm,prep) for Vlm, prep in zip(self.Vl(coordinates,sigma, self.k_profile, self.k_density),self.preprocessed)],axis=0)
+        correlation = np.sum([np.einsum('mk,gmk->g',Vlm,prep) for l, (Vlm, prep) in enumerate(zip(self.Vl(coordinates,sigma, self.k_profile, self.k_density),self.preprocessed)) if l > 0],axis=0)
         return correlation
 
     def align(self, coordinates: np.ndarray, sigma=1.0):
@@ -164,7 +200,7 @@ class Registrator(Spatial):
         best_fit = np.argmax(np.abs(self._latest_correlations),axis=0)
         return self.gallery[best_fit]
     
-    def correlation_frame(self, labels=['0,45,0']) -> pd.DataFrame:
+    def correlation_frame(self, labels=['correlation']) -> pd.DataFrame:
         '''
         Postprocess the registration results, yielding rotations for each coordinate set
         '''
