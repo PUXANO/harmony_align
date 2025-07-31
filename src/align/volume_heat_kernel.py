@@ -21,7 +21,6 @@ class Spatial(SphericalSequence, Grid):
         bound = (grid_size - 1) / 2 * scale
         ticks = np.linspace(-bound,bound,grid_size)
         Grid.__init__(self,*np.meshgrid(ticks,ticks,ticks, indexing='ij'))
-        self.k = [2 * np.pi / grid_size * ticks] * (l_max + 1)
 
     def Slm(self,voxels: np.ndarray, k_profile: np.ndarray) -> Generator[np.ndarray,None,None]:
         '''Eigenfunctions for the volume'''
@@ -77,7 +76,7 @@ class Registrator(Spatial):
                  k_res : int = 1):
         super().__init__(grid_size, scale, l_max)
         self.k_profile = self.get_k_profile(grid_size, l_max, k_res)
-        self.k_density = [np.exp(-self.k[l] **2 / 2) for l in range(l_max + 1)]
+        self.k_density = [np.exp(-self.k_profile[l] **2 / 2) for l in range(l_max + 1)]
         self.voxels = voxels
         self.sl = list(self.Slm(voxels, self.k_profile)) if self.voxels is not None else []
         self._gallery = (n_spherical, n_inplane,l_max)
@@ -163,12 +162,12 @@ class Registrator(Spatial):
         '''
         self.preprocessed = [np.einsum('gmw,wk->gmk',
                                        gallery,
-                                       sl) for gallery,sl in zip(self.gallery.matrices,self.Sl(self.voxels, self.k_profile))]
+                                       sl) for gallery,sl in zip(self.gallery.matrices,self.sl)]
 
         return self
     
     def Slm_single(self, l:int, m:int, k_profile_l: np.ndarray) -> list[np.ndarray]:
-       return np.sum(self.fourier_bessel_expansion(l,m,k_profile_l) * self.voxels[...,None] * self.dV,axis=(0,1,2))                
+        return np.sum(self.fourier_bessel_expansion(l,m,k_profile_l) * self.voxels[...,None] * self.dV,axis=(0,1,2))                
 
     def Sl_parallel(self, k_profile: np.ndarray) -> list[np.ndarray]:
         '''
@@ -192,7 +191,7 @@ class Registrator(Spatial):
         '''
         if self.preprocessed is None:
             raise ValueError("Preprocessing not done, call preprocess() first")
-        correlation = np.sum([np.einsum('mk,gmk->g',Vlm,prep) for Vlm, prep in zip(self.Vl(coordinates,sigma, self.k_profile, self.k_density),self.preprocessed)],axis=0)
+        correlation = np.sum([np.einsum('mk,gmk->g',Vlm,prep) for l, (Vlm, prep) in enumerate(zip(self.Vl(coordinates,sigma, self.k_profile, self.k_density),self.preprocessed)) if l > 0],axis=0)
         return correlation
 
     def align(self, coordinates: np.ndarray, sigma=1.0):

@@ -12,7 +12,7 @@ DATA = Path(__file__).parents[1] / "data"
 
 if __name__ == "__main__":
     coordinates = np.stack([atom.coordinates for atom in AtomLine.from_pdb(DATA / "3uat_psi=135_tilt=45_rot=120_better.pdb")])
-    voxels = open_volume(DATA / "3uat.vol")
+    voxels = open_volume(DATA / "3uat.vol").transpose((2,1,0))
 
     if torch.cuda.is_available():
         from align.volume_heat_kernel_torch import Registrator
