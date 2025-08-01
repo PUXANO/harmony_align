@@ -189,9 +189,10 @@ class Registrator(SphericalGridParallel):
         '''
         Preprocess the voxel moments per rotation, inplace operation
         '''
+        norm = np.sqrt(sum(np.einsum('mk,mk',moments,moments) for moments in self._volume_moments))
         self._preprocessed = [np.einsum('gmw,wk->gmk',
                                        gallery,
-                                       sl) for gallery,sl in zip(self.gallery.matrices,self._volume_moments)]
+                                       vm)/norm for gallery,vm in zip(self.gallery.matrices,self._volume_moments)]
 
         return self
 
@@ -211,8 +212,10 @@ class Registrator(SphericalGridParallel):
         '''
         if self._preprocessed is None:
             raise ValueError("Preprocessing not done, call preprocess() first")
-        correlation = np.sum([np.einsum('mk,gmk->g',Vlm,prep) for l, (Vlm, prep) in enumerate(zip(self.coordinate_moments_l(coordinates,sigma, self.k_profile, self.k_density),self._preprocessed)) if l > 0],axis=0)
-        return correlation
+        coordinate_moments = list(self.coordinate_moments_l(coordinates,sigma, self.k_profile, self.k_density))
+        norm = np.sqrt(sum(np.einsum('mk,mk',moments,moments) for moments in coordinate_moments))
+        correlation = np.sum([np.einsum('mk,gmk->g',cm,prep) for l, (cm, prep) in enumerate(zip(coordinate_moments,self._preprocessed)) if l > 0],axis=0)
+        return correlation / norm
 
     def align(self, coordinates: np.ndarray, sigma=1.0):
         '''perform alignment of this grid and voxel-densities with the given coordinates'''
@@ -220,7 +223,7 @@ class Registrator(SphericalGridParallel):
             t0 = time()
             self._latest_correlations = self.correlations(coordinates, sigma)
             best_fit = np.argmax(np.abs(self._latest_correlations),axis=0)
-            return self.gallery[best_fit]
+            return self.gallery.get_inverse(best_fit)
         finally:
             print(f"Alignment took {time() - t0:.2f} seconds")
 
@@ -232,8 +235,8 @@ class Registrator(SphericalGridParallel):
             print("No correlations computed yet, call align() first")
             return pd.DataFrame()
 
-        gallery_angles = [','.join([str(int(angle)) for angle in self.gallery[i].values()]) for i in range(len(self.gallery))]
-        
+        gallery_angles = [','.join([str(int(angle)) for angle in self.gallery.get_inverse(i).values()]) for i in range(len(self.gallery))]
+
         return pd.DataFrame(np.abs(self._latest_correlations),
                             index = gallery_angles,
                             columns = labels)

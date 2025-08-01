@@ -9,6 +9,11 @@ from spherical.wigner import Wigner
 from quaternionic.arrays import array
 from tools.utils import RealSphericalHarmonics
 
+def rad_to_deg(rad: float) -> float:
+    '''convert radians to degrees'''
+    semi = (rad / np.pi + 1) % 2 - 1
+    return semi * 180
+
 class WignerGallery:
     '''
     Object generating all l-representation of the rotation group for a given gallery of rotations
@@ -52,9 +57,21 @@ class WignerGallery:
         return len(self.grid)
 
     def __getitem__(self, item: int) -> dict[str, float]:
-        '''return euler angles?'''
+        '''Return euler angles'''
         angles = ["anglePsi","angleTilt","angleRot"]
-        return {angle: rad.item() * 180 / np.pi for angle, rad in zip (angles, self.grid[item].to_euler_angles)}
+        return {angle: rad_to_deg(rad.item()) for angle, rad in zip (angles, self.grid[item].to_euler_angles)}
+    
+    def get_inverse(self, item: int) -> dict[str, float]:
+        '''
+        Return inverse euler angles.
+        
+        Matrices R in this grid are used to compute Ylm(Rx), which corresponds to the reference rotated by R^{-1}
+
+        Indeed, an atom in (1,0,0) will, for a 90 degree Z-axis rotation, be strongly correlated to a density with a peak in (0,-1,0),
+        i.e. a density rotated by -90 degrees around the Z-axis.
+        '''
+        angles = ["anglePsi","angleTilt","angleRot"]
+        return {angle: rad_to_deg(rad.item()) for angle, rad in zip (angles, self.grid[item].inverse.to_euler_angles)}
 
 if __name__ == "__main__":
 
