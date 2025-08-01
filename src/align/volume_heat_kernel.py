@@ -9,6 +9,7 @@ The main class is `Registrator`: the problem at hand is often referred to as `3D
 
 from typing import Generator, Self
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from os import cpu_count
 
 import numpy as np
 import pandas as pd
@@ -72,6 +73,10 @@ class SphericalGridParallel(SphericalGrid):
     '''
     SphericalGrid with parallelized computation of the (precomputed) volume moments.
     '''
+    def __init__(self, grid_size = 100, scale = 1.0, l_max: int = 10):
+        super().__init__(grid_size, scale, l_max)
+        self._parallel_attributes = set(self.__dict__)
+
     def voxel_moments_lm(self, voxels: np.ndarray, k_profile: np.ndarray) -> list[np.ndarray]:
         '''
         Compute the spherical harmonics for the given voxels in parallel.
@@ -79,13 +84,23 @@ class SphericalGridParallel(SphericalGrid):
         '''
         res = [[None]*(2*l+1) for l in range(self.l_max + 1)]
 
-        with ProcessPoolExecutor() as executor:
+        # NOTE the serialization cost is significant, so more workers can turn out slower.
+        with ProcessPoolExecutor(max_workers=cpu_count() - 2) as executor:
             futures = {executor.submit(SphericalGrid.voxel_moment,self, l, m, voxels, k_prof): (l,m) 
                        for l, k_prof in enumerate(k_profile) for m in range(-l, l + 1)}
             for future in as_completed(futures):
                 l, m = futures[future]
                 res[l][m+l] = future.result()
         return [np.stack(multiplet,axis=0) for multiplet in res]
+    
+    def __getstate__(self):
+        '''
+        Custom serialization to avoid extra pickling to the ProcessPoolExecutor: ignore all child attributes.
+        '''
+        if __name__ == "__main__":
+            return super().__getstate__()
+        child_attributes = set(self.__dict__) - self._parallel_attributes   
+        return {k:self.__dict__.get(k) for k in self._parallel_attributes} | {k:None for k in child_attributes}
 
 class Registrator(SphericalGridParallel):
     '''
@@ -105,15 +120,10 @@ class Registrator(SphericalGridParallel):
         self.voxels = voxels
 
         # cached variables
-        self._gallery = (n_spherical, n_inplane,l_max)
+        self.gallery = WignerGallery(n_spherical, n_inplane,l_max)
         self._preprocessed = None
         self._volume_moments = list(self.voxel_moments_lm(voxels, self.k_profile)) if self.voxels is not None else []
         self._latest_correlations = None # temporary storage for the latest correlations
-
-    @property
-    def gallery(self) -> WignerGallery:
-        '''create on the fly since QArrays are not serializable for parallelization '''
-        return WignerGallery(*self._gallery)
 
     @classmethod
     def get_k_profile(cls, grid_size: int, l_max: int, k_res: int) -> list[np.ndarray]:
