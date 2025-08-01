@@ -148,6 +148,16 @@ class Registrator(SphericalGridParallel):
         self._volume_moments = self.voxel_moments_lm(voxels, self.k_profile)
         return self
     
+    def set_reference_2d(self, pixels: np.ndarray) -> Self:
+        '''
+        Set the reference coordinates and rotation for the registration.
+
+        This precomputes the volume moments for the given pixels, assuming they are in a the XY plane.
+        '''
+        self.voxels = np.tile(pixels[...,None], (1,1,self.grid_size))
+        self._volume_moments = self.voxel_moments_lm(self.voxels, self.k_profile)
+        return self
+
     def relevant_k(self, thresh: float | int) -> list[tuple[int,int, int]]:
         '''
         Filter the heat kernel eigenvalues per rotational mode by relevance to the given voxels
@@ -203,6 +213,17 @@ class Registrator(SphericalGridParallel):
         try:
             t0 = time()
             return self.set_reference(voxels).filter_k(thresh).preprocess()
+        finally:
+            print(f"Preprocessing took {time() - t0:.2f} seconds")
+
+    def load_2d(self, pixels: np.ndarray, thresh: float = 0.8) -> Self:
+        '''
+        One-liner for all preprocessing steps: set reference, filter modes, and preprocess.
+        Assumes the pixels are in the XY plane.
+        '''
+        try:
+            t0 = time()
+            return self.set_reference_2d(pixels).filter_k(thresh).preprocess()
         finally:
             print(f"Preprocessing took {time() - t0:.2f} seconds")
 
