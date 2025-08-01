@@ -10,6 +10,7 @@ The main class is `Registrator`: the problem at hand is often referred to as `3D
 from typing import Generator, Self
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from os import cpu_count
+from time import time
 
 import numpy as np
 import pandas as pd
@@ -194,6 +195,16 @@ class Registrator(SphericalGridParallel):
 
         return self
 
+    def load(self, voxels: np.ndarray, thresh: float = 0.8) -> Self:
+        '''
+        One-liner for all preprocessing steps: set reference, filter modes, and preprocess.
+        '''
+        try:
+            t0 = time()
+            return self.set_reference(voxels).filter_k(thresh).preprocess()
+        finally:
+            print(f"Preprocessing took {time() - t0:.2f} seconds")
+
     def correlations(self, coordinates: np.ndarray, sigma: float = 1.0) -> np.ndarray:
         '''
         Compute the correlations between the atom coordinate moments and the preprocessed volume moments
@@ -205,10 +216,14 @@ class Registrator(SphericalGridParallel):
 
     def align(self, coordinates: np.ndarray, sigma=1.0):
         '''perform alignment of this grid and voxel-densities with the given coordinates'''
-        self._latest_correlations = self.correlations(coordinates, sigma)
-        best_fit = np.argmax(np.abs(self._latest_correlations),axis=0)
-        return self.gallery[best_fit]
-    
+        try:
+            t0 = time()
+            self._latest_correlations = self.correlations(coordinates, sigma)
+            best_fit = np.argmax(np.abs(self._latest_correlations),axis=0)
+            return self.gallery[best_fit]
+        finally:
+            print(f"Alignment took {time() - t0:.2f} seconds")
+
     def correlation_frame(self, labels=['correlation']) -> pd.DataFrame:
         '''
         Postprocess the registration results, yielding rotations for each coordinate set
