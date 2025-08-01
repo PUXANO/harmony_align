@@ -1,15 +1,24 @@
+'''
+Module to compute Wigner D-matrices.
+'''
+
 from typing import Generator
 
 import numpy as np
 from spherical.wigner import Wigner
 from quaternionic.arrays import array
-from tools.utils import RealSph
+from tools.utils import RealSphericalHarmonics
+
+def rad_to_deg(rad: float) -> float:
+    '''convert radians to degrees'''
+    semi = (rad / np.pi + 1) % 2 - 1
+    return semi * 180
 
 class WignerGallery:
     '''
     Object generating all l-representation of the rotation group for a given gallery of rotations
     
-    TODO under construction, perhaps use https://spherical.readthedocs.io/en/main/
+    cfr. https://spherical.readthedocs.io/en/main/
     '''
     def __init__(self, n_spherical: int = 36, n_inplane: int = 36, l_max = 10):
         super().__init__()
@@ -39,7 +48,7 @@ class WignerGallery:
         i = 0
         for l in range(l_max+1):
             f = i + (2*l+1)**2
-            M = RealSph.U(l) @ entries[:,i:f].reshape((-1,2*l+1,2*l+1)) @ np.conjugate(RealSph.U(l).T)
+            M = RealSphericalHarmonics.U(l) @ entries[:,i:f].reshape((-1,2*l+1,2*l+1)) @ np.conjugate(RealSphericalHarmonics.U(l).T)
             assert np.allclose(np.imag(M),0), "Wigner D's in real space convention should be real"
             yield np.real(M)
             i = f
@@ -47,25 +56,22 @@ class WignerGallery:
     def __len__(self):
         return len(self.grid)
 
-    def transformations(self) -> Generator[np.ndarray,None,None]:
-        yield from self.matrices
-
     def __getitem__(self, item: int) -> dict[str, float]:
-        '''return euler angles?'''
+        '''Return euler angles'''
         angles = ["anglePsi","angleTilt","angleRot"]
-        return {angle: rad.item() * 180 / np.pi for angle, rad in zip (angles, self.grid[item].to_euler_angles)}
-
-class WignerGalleryTorch(WignerGallery):
-    '''
-    Object generating all l-representation of the rotation group for a given gallery of rotations
+        return {angle: rad_to_deg(rad.item()) for angle, rad in zip (angles, self.grid[item].to_euler_angles)}
     
-    TODO under construction, perhaps use https://spherical.readthedocs.io/en/main/
-    '''
-    def __init__(self, n_spherical: int = 36, n_inplane: int = 36, l_max = 10):
-        super().__init__()
-        self.grid = array.from_euler_angles(np.array(list(self.gallery(n_spherical, n_inplane))))
-        from tools.utils_torch import from_numpy
-        self.matrices = [from_numpy(matrix) for matrix in self.get_matrices(self.grid, l_max)]
+    def get_inverse(self, item: int) -> dict[str, float]:
+        '''
+        Return inverse euler angles.
+        
+        Matrices R in this grid are used to compute Ylm(Rx), which corresponds to the reference rotated by R^{-1}
+
+        Indeed, an atom in (1,0,0) will, for a 90 degree Z-axis rotation, be strongly correlated to a density with a peak in (0,-1,0),
+        i.e. a density rotated by -90 degrees around the Z-axis.
+        '''
+        angles = ["anglePsi","angleTilt","angleRot"]
+        return {angle: rad_to_deg(rad.item()) for angle, rad in zip (angles, self.grid[item].inverse.to_euler_angles)}
 
 if __name__ == "__main__":
 
@@ -83,13 +89,13 @@ if __name__ == "__main__":
     theta = 0.3 * np.pi
     rot = array.from_euler_angles(np.array([[np.pi/2.13, np.pi/1.23,np.pi/3.21]]) )
 
-    mplets = [np.array([RealSph.Ylm(l,m,theta,phi) for m in range(-l,l+1)]) for l in range(4)]
+    mplets = [np.array([RealSphericalHarmonics.Ylm(l,m,theta,phi) for m in range(-l,l+1)]) for l in range(4)]
 
     # Rotate moments in 2 ways: through coordinates and wigner D matrices
     theta2,phi2 = rotate_angles(theta, phi, rot)
     matrices = WignerGallery.get_matrices(None,rot, 3)
 
-    mplets_rotated_coord = [np.array([RealSph.Ylm(l,m,theta2, phi2) for m in range(-l,l+1)]) for l in range(4)]
+    mplets_rotated_coord = [np.array([RealSphericalHarmonics.Ylm(l,m,theta2, phi2) for m in range(-l,l+1)]) for l in range(4)]
     mplets_rotated_moments = [mat[0] @ mplet for mat, mplet in zip(matrices, mplets)]
 
     # Check if they match
