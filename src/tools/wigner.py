@@ -1,15 +1,19 @@
+'''
+Module to compute Wigner D-matrices.
+'''
+
 from typing import Generator
 
 import numpy as np
 from spherical.wigner import Wigner
 from quaternionic.arrays import array
-from tools.utils import RealSph
+from tools.utils import RealSphericalHarmonics
 
 class WignerGallery:
     '''
     Object generating all l-representation of the rotation group for a given gallery of rotations
     
-    TODO under construction, perhaps use https://spherical.readthedocs.io/en/main/
+    cfr. https://spherical.readthedocs.io/en/main/
     '''
     def __init__(self, n_spherical: int = 36, n_inplane: int = 36, l_max = 10):
         super().__init__()
@@ -39,16 +43,13 @@ class WignerGallery:
         i = 0
         for l in range(l_max+1):
             f = i + (2*l+1)**2
-            M = RealSph.U(l) @ entries[:,i:f].reshape((-1,2*l+1,2*l+1)) @ np.conjugate(RealSph.U(l).T)
+            M = RealSphericalHarmonics.U(l) @ entries[:,i:f].reshape((-1,2*l+1,2*l+1)) @ np.conjugate(RealSphericalHarmonics.U(l).T)
             assert np.allclose(np.imag(M),0), "Wigner D's in real space convention should be real"
             yield np.real(M)
             i = f
 
     def __len__(self):
         return len(self.grid)
-
-    def transformations(self) -> Generator[np.ndarray,None,None]:
-        yield from self.matrices
 
     def __getitem__(self, item: int) -> dict[str, float]:
         '''return euler angles?'''
@@ -71,13 +72,13 @@ if __name__ == "__main__":
     theta = 0.3 * np.pi
     rot = array.from_euler_angles(np.array([[np.pi/2.13, np.pi/1.23,np.pi/3.21]]) )
 
-    mplets = [np.array([RealSph.Ylm(l,m,theta,phi) for m in range(-l,l+1)]) for l in range(4)]
+    mplets = [np.array([RealSphericalHarmonics.Ylm(l,m,theta,phi) for m in range(-l,l+1)]) for l in range(4)]
 
     # Rotate moments in 2 ways: through coordinates and wigner D matrices
     theta2,phi2 = rotate_angles(theta, phi, rot)
     matrices = WignerGallery.get_matrices(None,rot, 3)
 
-    mplets_rotated_coord = [np.array([RealSph.Ylm(l,m,theta2, phi2) for m in range(-l,l+1)]) for l in range(4)]
+    mplets_rotated_coord = [np.array([RealSphericalHarmonics.Ylm(l,m,theta2, phi2) for m in range(-l,l+1)]) for l in range(4)]
     mplets_rotated_moments = [mat[0] @ mplet for mat, mplet in zip(matrices, mplets)]
 
     # Check if they match
