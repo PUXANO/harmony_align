@@ -55,18 +55,6 @@ class WignerGallery:
         angles = ["anglePsi","angleTilt","angleRot"]
         return {angle: rad.item() * 180 / np.pi for angle, rad in zip (angles, self.grid[item].to_euler_angles)}
 
-class WignerGalleryTorch(WignerGallery):
-    '''
-    Object generating all l-representation of the rotation group for a given gallery of rotations
-    
-    TODO under construction, perhaps use https://spherical.readthedocs.io/en/main/
-    '''
-    def __init__(self, n_spherical: int = 36, n_inplane: int = 36, l_max = 10):
-        super().__init__()
-        self.grid = array.from_euler_angles(np.array(list(self.gallery(n_spherical, n_inplane))))
-        from tools.utils_torch import from_numpy
-        self.matrices = [from_numpy(matrix) for matrix in self.get_matrices(self.grid, l_max)]
-
 if __name__ == "__main__":
 
     def rotate_angles(theta, phi, rot):

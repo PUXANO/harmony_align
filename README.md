@@ -91,7 +91,7 @@ Conversely, we expect that the preprocessing of the 2D case will be much more ef
 
 ## Implementation
 
-Currently the latter approach, selecting relevant components in the heat kernel approximation, is implemented both for CPU (numpy) and GPU (torch) execution in `align/volume_heat_kernel` and `align/volume_heat_kernel_torch` respectively. Perhaps surprisingly, the diffusion computation doesn't differ much between them with torch being even slighly slower, perhaps the missing bessel and spherical functions being interpolated instead can account for that. The preprocessing step on the other hand is much faster on the GPU.
+Currently the latter approach, selecting relevant components in the heat kernel approximation, is implemented in `align/volume_heat_kernel`. A previous `torch` implementation is omitted since it was quite complex to implement the special functions there. The speedup was significant in the preprocessing, but we can replicate this by parallelizing over multiple cpu's. It is not worth maintaining a dual implementation in the end.
 
 # Getting started
 

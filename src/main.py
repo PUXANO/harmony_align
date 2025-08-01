@@ -3,7 +3,6 @@ from pathlib import Path
 from time import time
 
 import numpy as np
-import torch
 
 from tools.xmipp import AtomLine
 from tools.spider_files3 import open_volume
