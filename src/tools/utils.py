@@ -148,6 +148,10 @@ class Grid:
         self.cached_Xlnm: dict[tuple[int,int,int],np.ndarray] = {}
 
     @property
+    def grid_size(self) -> int:
+        return self.grid.shape[0]
+
+    @property
     def r_reg(self) -> np.ndarray:
         '''Return the regularized radius, avoiding division by zero.'''
         return np.maximum(self.r,1.e-8)
