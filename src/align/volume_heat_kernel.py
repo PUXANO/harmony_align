@@ -204,6 +204,8 @@ class Registrator(SphericalGridParallel):
         self._preprocessed = [np.einsum('gmw,wk->gmk',
                                        gallery,
                                        vm)/norm for gallery,vm in zip(self.gallery.matrices,self._volume_moments)]
+        self._volume_profile = [np.einsum('mk,mk->k',moments,moments)/norm**2 for moments in self._volume_moments]
+        '''l x k sized rotationally invariant moments'''
 
         return self
 
@@ -238,10 +240,36 @@ class Registrator(SphericalGridParallel):
         norm = np.sqrt(sum(np.einsum('mk,mk',moments,moments) for moments in coordinate_moments))
         correlation = np.sum([np.einsum('mk,gmk->g',cm,prep) for l, (cm, prep) in enumerate(zip(coordinate_moments,self._preprocessed)) if l > 0],axis=0)
         return correlation / norm
+    
+    def transline(self, coordinates: np.ndarray, sigma: float = 1.0) -> np.ndarray:
+        '''Compute the translational line for the given coordinates'''
+        if self._volume_profile is None:
+            raise ValueError("Preprocessing not done, call preprocess() first")
+        coordinate_moments = list(self.coordinate_moments_l(coordinates,sigma, self.k_profile, self.k_density))
+        coordinate_profile = [np.einsum('mk,mk->k',moments,moments) for moments in coordinate_moments]
+        norm2 = sum(cp @ cp for cp in coordinate_profile)
+        coordinate_profile = [cp / norm2 for cp in coordinate_profile]
+
+        return sum([vol * np.log(vol / coor) 
+                    for vol_l, coor_l in zip(self._volume_profile, coordinate_profile) 
+                    for vol, coor in zip(vol_l, coor_l)] )
+    
+    def trans_poll(self, coordinates: np.ndarray, sigma: float = 1.0, window: int = 1) -> tuple[float,float]:
+        t0 = time()
+        try:
+            ticks = np.linspace(-window,window,2*window+1)
+            shifts = np.stack(np.meshgrid(ticks,ticks,ticks,indexing='ij'),-1).reshape(-1,3)
+            cross_entropies = [self.transline(coordinates + shift, sigma) for shift in shifts]
+            return shifts[np.argmin(cross_entropies)]
+        finally:
+            self._latest_timings['trans_poll'] = time() - t0
+
 
     def align(self, coordinates: np.ndarray, sigma=1.0):
         '''perform alignment of this grid and voxel-densities with the given coordinates'''
         try:
+            shift = self.trans_poll(coordinates, sigma)
+            coordinates = coordinates + shift
             t0 = time()
             self._latest_correlations = self.correlations(coordinates, sigma)
             best_fit = np.argmax(np.abs(self._latest_correlations),axis=0)

@@ -101,9 +101,9 @@ class Benchmark:
                 print(f"{pdb.stem} -- failed to open volume {volume}")
                 return
 
-        voxel_shift = (np.asarray(voxels.shape) // 2 - coordinate_shift / voxel_size).round(0).astype(int)
-        voxels = np_shift(voxels, voxel_shift, axis=(0,1,2))
-        # voxels = center_shift(voxels)
+        # voxel_shift = (np.asarray(voxels.shape) // 2 - coordinate_shift / voxel_size).round(0).astype(int)
+        # voxels = np_shift(voxels, voxel_shift, axis=(0,1,2))
+        voxels = center_shift(voxels)
         voxels -= voxels.mean()
 
         grid_coordinates = coordinates / voxel_size
