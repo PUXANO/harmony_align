@@ -125,6 +125,7 @@ class Registrator(SphericalGridParallel):
         self._preprocessed = None
         self._volume_moments = list(self.voxel_moments_lm(voxels, self.k_profile)) if self.voxels is not None else []
         self._latest_correlations = None # temporary storage for the latest correlations
+        self._latest_timings = {'load': 0.0, 'load_2d': 0.0, 'align': 0.0}
 
     @classmethod
     def get_k_profile(cls, grid_size: int, l_max: int, k_res: int) -> list[np.ndarray]:
@@ -136,7 +137,7 @@ class Registrator(SphericalGridParallel):
         Returns k_res * (grid_size // 2) k-values per l.
         '''
         r_max = (grid_size // 2)
-        return list(jn_zeros(l_max, k_res * (grid_size // 2)) / r_max)
+        return list(jn_zeros(l_max, int(k_res * (grid_size // 2))) / r_max)
 
     def set_reference(self, voxels: np.ndarray) -> Self:
         '''
@@ -214,7 +215,7 @@ class Registrator(SphericalGridParallel):
             t0 = time()
             return self.set_reference(voxels).filter_k(thresh).preprocess()
         finally:
-            print(f"Preprocessing took {time() - t0:.2f} seconds")
+            self._latest_timings['load'] = time() - t0
 
     def load_2d(self, pixels: np.ndarray, thresh: float = 0.8) -> Self:
         '''
@@ -225,7 +226,7 @@ class Registrator(SphericalGridParallel):
             t0 = time()
             return self.set_reference_2d(pixels).filter_k(thresh).preprocess()
         finally:
-            print(f"Preprocessing took {time() - t0:.2f} seconds")
+            self._latest_timings['load_2d'] = time() - t0
 
     def correlations(self, coordinates: np.ndarray, sigma: float = 1.0) -> np.ndarray:
         '''
@@ -246,7 +247,7 @@ class Registrator(SphericalGridParallel):
             best_fit = np.argmax(np.abs(self._latest_correlations),axis=0)
             return self.gallery.get_inverse(best_fit)
         finally:
-            print(f"Alignment took {time() - t0:.2f} seconds")
+            self._latest_timings['align'] = time() - t0
 
     def correlation_frame(self, labels=['correlation']) -> pd.DataFrame:
         '''
