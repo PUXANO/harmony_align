@@ -36,8 +36,8 @@ class WignerGallery:
         gamma = phi   = rot
         '''
         eps = 1.e-8
-        for theta in np.linspace(0,np.pi/2,n_spherical//4+1):
-            M = int(np.ceil(n_spherical * np.sin(theta+eps)))
+        for theta in np.linspace(0,np.pi,n_spherical//2):
+            M = int(np.ceil(n_spherical * np.abs(np.sin(theta+eps))))
             for phi in np.linspace(0,2*np.pi,M+1)[:-1]:
                 for psi in np.linspace(0,2*np.pi,n_inplane+1)[:-1]:
                     yield psi,theta,phi
